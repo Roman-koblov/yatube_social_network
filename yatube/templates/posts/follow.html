@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% load cache %}
+{% load static %}
+{% block title %} Любимые авторы {% endblock %}    
+{% block content %}   
+  <h1>Любимые авторы пользователя {{ request.user }}</h1>
+  <hr>
+  {% cache 1 index_page %}
+  {% include 'posts/includes/switcher.html' %}
+  {% for post in page_obj %}
+    <article>
+      {% include 'posts/includes/body.html' %}
+      {% if post.group %} 
+        <a href="{% url 'posts:group_list' post.group.slug %}">Все записи группы</a> 
+      {% endif %} 
+    </article>  
+    {% if not forloop.last %}<hr>{% endif %}  
+  {% endfor %}
+  {% endcache %}
+{% include 'posts/includes/paginator.html' %}
+{% endblock %}
