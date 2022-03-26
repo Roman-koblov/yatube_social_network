@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
-from ..models import Comment, Group, Post, User
+from ..models import Comment, Follow, Group, Post, User
 
 FIRST_PAGE_COUNT = 10
 SECOND_PAGE_COUNT = 1
@@ -311,13 +311,12 @@ class FollowingTest(TestCase):
 
     def setUp(self):
         # автор
-        self.user = User.objects.get(username=AUTHOR)
         self.authorized_author = Client()
-        self.authorized_author.force_login(self.user)
+        self.authorized_author.force_login(self.author)
         # другой авторизованный клиент
-        self.user1 = User.objects.create_user(username='not_author')
+        self.follower = User.objects.create_user(username='not_author')
         self.authorized_client = Client()
-        self.authorized_client.force_login(self.user1)
+        self.authorized_client.force_login(self.follower)
 
     def test_follow(self):
         """Подписка работает"""
@@ -331,21 +330,17 @@ class FollowingTest(TestCase):
             response,
             reverse('posts:profile', kwargs={'username': 'not_author'})
         )
-        response2 = self.authorized_client.get(
-            reverse('posts:follow_index')
+        self.assertTrue(
+            Follow.objects.filter(
+                author=self.author,
+                user=self.follower
+            ).exists()
         )
-        followed_posts = response2.context['posts'][0]
-        author_posts = Post.objects.filter(author_id=self.author)[0]
-        self.assertEqual(author_posts, followed_posts)
 
     def test_unfollow(self):
         """Отписка работает"""
         # подписка
-        response = self.authorized_client.get(
-            reverse(
-                'posts:profile_follow', kwargs={'username': AUTHOR}
-            )
-        )
+        Follow.objects.create(author=self.author, user=self.follower)
         # отписка
         response = self.authorized_client.get(
             reverse(
@@ -356,14 +351,23 @@ class FollowingTest(TestCase):
         )
         self.assertRedirects(
             response,
-            reverse('posts:profile', kwargs={'username': 'not_author'})
+            reverse(
+                'posts:profile',
+                kwargs={'username': self.follower.username}
+            )
         )
         response = self.authorized_client.get(
             reverse('posts:follow_index')
         )
         followed_posts = response.context['posts']
-        author_posts = Post.objects.filter(author_id=self.author)[0]
+        author_posts = Post.objects.filter(author_id=self.author)
         self.assertNotIn(author_posts, followed_posts)
+        self.assertFalse(
+            Follow.objects.filter(
+                author=self.author,
+                user=self.follower
+            ).exists()
+        )
 
     def test_subscriber_see_new_post(self):
         """Новые посты появляются на странице подписчика"""
