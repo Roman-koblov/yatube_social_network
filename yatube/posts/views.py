@@ -134,8 +134,7 @@ def post_delete(request, post_id):
 
 @login_required
 def follow_index(request):
-    authors_id = request.user.follower.all().values_list('author', flat=True)
-    posts = Post.objects.filter(author_id__in=authors_id)
+    posts = Post.objects.filter(author__following__user=request.user)
     context = {'posts': posts}
     context.update(get_page_context(posts, request))
     return render(request, 'posts/follow.html', context)
@@ -144,11 +143,8 @@ def follow_index(request):
 @login_required
 def profile_follow(request, username):
     user_name = User.objects.get(username=username)
-    if not (Follow.objects.filter(
-            user=request.user,
-            author=user_name).exists() or username == request.user.username):
-        user_name = User.objects.get(username=username)
-        new_subscribe = Follow.objects.create(
+    if not username == request.user.username:
+        new_subscribe, bool = Follow.objects.get_or_create(
             author=user_name,
             user=request.user
         )

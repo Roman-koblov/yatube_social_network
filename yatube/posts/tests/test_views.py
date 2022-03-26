@@ -149,28 +149,6 @@ class PostsPagesTests(TestCase):
         self.assertIn(self.post_created_from_test_group0, posts_from_context1)
         self.assertIn(self.post_created_from_test_group1, posts_from_context1)
 
-    def test_index_cache(self):
-        """Cache главной страницы работает"""
-        cached_post = Post.objects.create(
-            text='cache', author=self.main_author
-        )
-        response = (
-            self.authorized_author.get(reverse('posts:main_page'))
-        )
-        default_content = response.content
-        cached_post.delete()
-        response2 = (
-            self.authorized_author.get(reverse('posts:main_page'))
-        )
-        changed_content = response2.content
-        self.assertEqual(default_content, changed_content)
-        cache.clear()
-        response3 = (
-            self.authorized_author.get(reverse('posts:main_page'))
-        )
-        cleared_cache_content = response3.content
-        self.assertNotEqual(default_content, cleared_cache_content)
-
     def test_group_list_show_correct_context(self):
         """Шаблон group_list сформирован с правильным контекстом."""
         response = (
@@ -283,8 +261,66 @@ class PostsPagesTests(TestCase):
                     len(response.context['page_obj']), SECOND_PAGE_COUNT
                 )
 
-    def test_follow_and_unfolllow(self):
-        """Подписка от и тописка работают"""
+
+class PostsCacheTests(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.author = User.objects.create_user(username=AUTHOR)
+
+    def setUp(self):
+        # автор
+        self.user = User.objects.get(username=AUTHOR)
+        self.authorized_author = Client()
+        self.authorized_author.force_login(self.user)
+
+    def test_index_cache(self):
+        """Cache главной страницы работает"""
+        cached_post = Post.objects.create(
+            text='cache', author=self.author
+        )
+        response = (
+            self.authorized_author.get(reverse('posts:main_page'))
+        )
+        default_content = response.content
+        cached_post.delete()
+        response2 = (
+            self.authorized_author.get(reverse('posts:main_page'))
+        )
+        changed_content = response2.content
+        self.assertEqual(default_content, changed_content)
+        cache.clear()
+        response3 = (
+            self.authorized_author.get(reverse('posts:main_page'))
+        )
+        cleared_cache_content = response3.content
+        self.assertNotEqual(default_content, cleared_cache_content)
+
+
+class FollowingTest(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.author = User.objects.create_user(username=AUTHOR)
+        Post.objects.bulk_create([
+            Post(
+                text=TEST_TEXT,
+                author=cls.author
+            ) for i in range(5)
+        ])
+
+    def setUp(self):
+        # автор
+        self.user = User.objects.get(username=AUTHOR)
+        self.authorized_author = Client()
+        self.authorized_author.force_login(self.user)
+        # другой авторизованный клиент
+        self.user1 = User.objects.create_user(username='not_author')
+        self.authorized_client = Client()
+        self.authorized_client.force_login(self.user1)
+
+    def test_follow(self):
+        """Подписка работает"""
         # подписка
         response = self.authorized_client.get(
             reverse(
@@ -299,27 +335,28 @@ class PostsPagesTests(TestCase):
             reverse('posts:follow_index')
         )
         followed_posts = response2.context['posts'][0]
-        test_author = get_object_or_404(User, username=AUTHOR)
-        author_posts = Post.objects.filter(author_id=test_author)[0]
+        author_posts = Post.objects.filter(author_id=self.author)[0]
         self.assertEqual(author_posts, followed_posts)
 
-        # отписка
-        response3 = self.authorized_client.get(
+    def test_unfollow(self):
+        """Отписка работает"""
+        response = self.authorized_client.get(
             reverse(
                 'posts:profile_unfollow', kwargs={
-                    'username': self.main_author.username
+                    'username': self.author.username
                 }
             )
         )
         self.assertRedirects(
-            response3,
+            response,
             reverse('posts:profile', kwargs={'username': 'not_author'})
         )
-        response4 = self.authorized_client.get(
+        response = self.authorized_client.get(
             reverse('posts:follow_index')
         )
-        followed_posts2 = response4.context['posts']
-        self.assertNotIn(author_posts, followed_posts2)
+        followed_posts = response.context['posts']
+        author_posts = Post.objects.filter(author_id=self.author)[0]
+        self.assertNotIn(author_posts, followed_posts)
 
     def test_subscriber_see_new_post(self):
         """Новые посты появляются на странице подписчика"""
@@ -327,14 +364,14 @@ class PostsPagesTests(TestCase):
         self.authorized_client.get(
             reverse(
                 'posts:profile_follow', kwargs={
-                    'username': self.main_author.username
+                    'username': self.author.username
                 }
             )
         )
         # автор написал пост
         new_post = Post.objects.create(
             text='for_subscribers',
-            author=self.main_author
+            author=self.author
         )
         # проверяем наличие поста в списке постов подписчика
         response = self.authorized_client.get(
@@ -342,3 +379,18 @@ class PostsPagesTests(TestCase):
         )
         followed_posts = response.context['posts']
         self.assertIn(new_post, followed_posts)
+
+    def test_not_subscr_cant_see_new_post(self):
+        """Новые посты  не появляются на странице
+        неподписанного пользователя"""
+        # автор написал пост
+        new_post = Post.objects.create(
+            text='for_subscribers',
+            author=self.author
+        )
+        # проверяем отсутствие поста в списке постов подписчика
+        response = self.authorized_client.get(
+            reverse('posts:follow_index')
+        )
+        posts = response.context['posts']
+        self.assertNotIn(new_post, posts)
