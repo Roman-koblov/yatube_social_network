@@ -340,6 +340,13 @@ class FollowingTest(TestCase):
 
     def test_unfollow(self):
         """Отписка работает"""
+        # подписка
+        response = self.authorized_client.get(
+            reverse(
+                'posts:profile_follow', kwargs={'username': AUTHOR}
+            )
+        )
+        # отписка
         response = self.authorized_client.get(
             reverse(
                 'posts:profile_unfollow', kwargs={
